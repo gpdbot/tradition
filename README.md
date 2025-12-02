@@ -1,1 +1,2 @@
 디시 전통놀이 개선판
+https://gpdbot.github.io/tradition/
