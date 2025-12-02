@@ -54,6 +54,11 @@ input[type="file"] {
 	cursor: pointer;
 }
 
+.cover.drag-over {
+	box-shadow: 0 0 12px 5px rgb(255, 127, 80); /* Coral (255, 127, 80) */
+	border: 2px solid coral;
+}
+
 /* [추가됨] 파일 목록 스타일 */
 #file-list-container {
 	width: 80%;
