@@ -4,6 +4,8 @@ let fileQueue = [];
 document.addEventListener("DOMContentLoaded", () => {
     let consoleElem = document.querySelector("#console");
     let progressCount = 0;
+    // --- Change 2: Get cover element for D&D listeners ---
+    const coverElement = document.querySelector(".cover");
 
     log = {
         log(x) {
@@ -24,6 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // Change 1: fileform input is updated in index.html to allow folder selection
     document.querySelector("#fileform").addEventListener("change", function() {
         addFiles(this.files);
         this.value = '';
@@ -46,14 +49,39 @@ document.addEventListener("DOMContentLoaded", () => {
         e.stopPropagation();
     });
 
-    document.getElementById("btn-speed").addEventListener("click", (e) => {
+    // --- Change 3: New button/checkbox listeners ---
+    document.getElementById("btn-convert").addEventListener("click", (e) => {
         e.stopPropagation();
-        runCompression("STORE");
+        const isSizePriority = document.getElementById("chk-size-priority").checked;
+        const compressionMode = isSizePriority ? "DEFLATE" : "STORE";
+        runCompression(compressionMode);
     });
-    document.getElementById("btn-size").addEventListener("click", (e) => {
+    // Removed old btn-speed and btn-size listeners
+
+    // --- Change 2: Add drag listeners for cover image visual feedback ---
+    // Prevent default must be here to enable dropping for the cover element
+    coverElement.addEventListener("dragenter", (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        runCompression("DEFLATE");
+        // Check if the dragged item is an image
+        if (e.dataTransfer.items && e.dataTransfer.items[0].type.startsWith('image/')) {
+            coverElement.classList.add("drag-over");
+        }
     });
+
+    coverElement.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only remove class if leaving the actual element, not just an inner element
+        if (!coverElement.contains(e.relatedTarget) || e.relatedTarget === window) {
+            coverElement.classList.remove("drag-over");
+        }
+    });
+
+    coverElement.addEventListener("dragover", (e) => {
+        e.preventDefault(); // Necessary to allow dropping
+    });
+    // --- End Change 2 Listeners ---
 
     // 초기 이미지 설정 (cover.js에 정의된 img_blob 사용)
     if (typeof img_blob !== 'undefined') {
@@ -205,6 +233,7 @@ function runCompression(compressionMode) {
                 alert(e.data.error);
                 log.log("오류 발생!");
             } else if (e.data.success) {
+                // Change 1: Enforce default filename is always 'Result' if empty
                 let filenameInput = document.getElementById("filename").value.trim();
                 if (!filenameInput) filenameInput = "Result";
                 
@@ -233,34 +262,40 @@ window.addEventListener("dragover", function(e) {
     e.preventDefault();
 }, false);
 
+// --- Change 1 & 2: Refactored drop logic ---
 window.addEventListener("drop", function(e) {
     e.preventDefault();
     e.stopPropagation();
 
-    let items = e.dataTransfer.items;
-    let isSingleFolder = false;
-    let folderName = "";
+    const coverElement = document.querySelector(".cover");
+    coverElement.classList.remove("drag-over");
 
+    // Change 2: Handle drop on cover image area
+    if (e.target.closest('.cover')) {
+        const files = e.dataTransfer.files;
+        if (files.length === 1 && files[0].type.startsWith('image/')) {
+            updateImgBlob(files[0]);
+            log.log("커버 이미지 업데이트됨.");
+        } else if (files.length > 0) {
+            alert("커버 이미지 선택 영역에는 이미지만 하나 드롭할 수 있습니다.");
+        }
+        return;
+    }
+    
+    // Change 1: Handle drop on dropzone (files/folders)
+    let items = e.dataTransfer.items;
+    let entries = [];
+    
     if (items) {
-        let entries = [];
         for (let i = 0; i < items.length; i++) {
             if (items[i].webkitGetAsEntry) {
                 entries.push(items[i].webkitGetAsEntry());
             }
         }
-
-        if (entries.length === 1 && entries[0].isDirectory) {
-            isSingleFolder = true;
-            folderName = entries[0].name;
-        }
-
+        
+        // Removed old single-folder-name logic (Change 1)
         scanFiles(entries).then(files => {
             files.forEach(f => fileQueue.push(f));
-
-            if (isSingleFolder && folderName) {
-                document.getElementById("filename").value = folderName;
-            }
-
             renderFileList();
         });
     } else {
