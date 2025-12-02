@@ -1,6 +1,5 @@
 let log = null;
 let fileQueue = [];
-let img_blob = null; // img_blob 변수 명시적 선언
 
 document.addEventListener("DOMContentLoaded", () => {
     let consoleElem = document.querySelector("#console");
