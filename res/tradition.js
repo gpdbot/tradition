@@ -193,29 +193,22 @@ function runCompression(compressionMode) {
         return;
     }
 
+    // --- [추가됨] 단일 ZIP/PNG 파일 감지 및 압축 건너뛰기 로직 ---
+    const isSingleFile = fileQueue.length === 1;
+    // .zip 또는 .png 확장자일 경우 (압축된 데이터 파일일 가능성 높음) 압축 단계를 건너뜀
+    const isZipOrPngData = isSingleFile && 
+                       (fileQueue[0].name.toLowerCase().endsWith(".zip") || 
+                        fileQueue[0].name.toLowerCase().endsWith(".png"));
+
     log.clear();
-    let zip = new JSZip();
-    log.log("압축 준비 중...");
-
-    fileQueue.forEach(file => {
-        let path = file.fullPath ? file.fullPath : file.name;
-        zip.file(path, file);
-    });
-
-    log.log("압축하는 중...");
 
     let progressInterval = setInterval(() => {
         log.progress();
     }, 100);
 
-    let options = {
-        type: "blob",
-        compression: compressionMode,
-        compressionOptions: { level: compressionMode === "STORE" ? 1 : 6 }
-    };
-
-    zip.generateAsync(options).then((zipBlob) => {
-        log.log("이미지와 결합 중..."); // [추가됨] 상태 메시지
+    // ZIP Blob을 처리하는 내부 함수 (압축 결과 또는 단일 파일)
+    const processZipData = (zipBlob) => {
+        log.log("이미지와 결합 중..."); 
 
         // [개선 3] Web Worker 생성 및 실행
         const blobURL = URL.createObjectURL(new Blob([workerCode], { type: 'application/javascript' }));
@@ -233,7 +226,6 @@ function runCompression(compressionMode) {
                 alert(e.data.error);
                 log.log("오류 발생!");
             } else if (e.data.success) {
-                // Change 1: Enforce default filename is always 'Result' if empty
                 let filenameInput = document.getElementById("filename").value.trim();
                 if (!filenameInput) filenameInput = "Result";
                 
@@ -251,8 +243,34 @@ function runCompression(compressionMode) {
             console.error(e);
             worker.terminate();
         };
+    };
 
-    }, (err) => {
+    if (isZipOrPngData) {
+        log.log("단일 데이터 파일 감지: 압축 건너뛰고 바로 전환합니다.");
+        const zipBlob = fileQueue[0];
+        processZipData(zipBlob);
+        return;
+    }
+    // --- 단일 파일 감지 로직 끝 ---
+
+    // --- 기존 압축 로직 ---
+    log.log("압축 준비 중...");
+    let zip = new JSZip();
+
+    fileQueue.forEach(file => {
+        let path = file.fullPath ? file.fullPath : file.name;
+        zip.file(path, file);
+    });
+
+    log.log("압축하는 중...");
+
+    let options = {
+        type: "blob",
+        compression: compressionMode,
+        compressionOptions: { level: compressionMode === "STORE" ? 1 : 6 }
+    };
+
+    zip.generateAsync(options).then(processZipData, (err) => {
         clearInterval(progressInterval);
         alert("압축 중 오류: " + err);
     });
