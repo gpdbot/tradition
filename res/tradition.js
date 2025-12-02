@@ -1,5 +1,3 @@
-// gpdbot/tradition/tradition-main/res/tradition.js
-
 let log = null;
 let fileQueue = [];
 
@@ -26,19 +24,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // [수정 1] 일반 파일 업로드
     document.querySelector("#fileform").addEventListener("change", function() {
         addFiles(this.files);
         this.value = '';
     });
 
-    // [수정 1] 폴더 업로드 처리
-    document.querySelector("#folderform").addEventListener("change", function() {
-        addFiles(this.files);
-        this.value = '';
-    });
-
-    // 커버 이미지 처리
     document.querySelector("#coverform").addEventListener("change", function(e) {
         if (this.files && this.files[0]) {
             updateImgBlob(this.files[0]);
@@ -46,17 +36,9 @@ document.addEventListener("DOMContentLoaded", () => {
         e.stopPropagation();
     });
 
-    // [수정 1] 드롭존 클릭 시 일반 파일 업로드 트리거
     document.querySelector("#dropzone").addEventListener("click", (e) => {
-        // 버튼이나 입력창, 폴더 업로드 링크 클릭 시 무시
-        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.classList.contains('remove-btn') || e.target.id === 'btn-folder-upload') return;
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.classList.contains('remove-btn')) return;
         document.querySelector("#fileform").click();
-    });
-
-    // [수정 1] 폴더 업로드 텍스트 클릭 시 트리거
-    document.querySelector("#btn-folder-upload").addEventListener("click", (e) => {
-        e.stopPropagation();
-        document.querySelector("#folderform").click();
     });
 
     document.querySelector(".cover").addEventListener("click", (e) => {
@@ -64,19 +46,16 @@ document.addEventListener("DOMContentLoaded", () => {
         e.stopPropagation();
     });
 
-    // [수정 3] 저장 버튼 하나로 통합 및 압축률 옵션 처리
-    document.getElementById("btn-save").addEventListener("click", (e) => {
+    document.getElementById("btn-speed").addEventListener("click", (e) => {
         e.stopPropagation();
-        const isHighCompress = document.getElementById("chk-compress").checked;
-        const mode = isHighCompress ? "DEFLATE" : "STORE";
-        
-        // 버튼 텍스트 업데이트 (시각적 피드백)
-        const btnText = isHighCompress ? "저장 (고압축)" : "저장 (속도 우선)";
-        e.target.innerText = btnText;
-
-        runCompression(mode);
+        runCompression("STORE");
+    });
+    document.getElementById("btn-size").addEventListener("click", (e) => {
+        e.stopPropagation();
+        runCompression("DEFLATE");
     });
 
+    // 초기 이미지 설정 (cover.js에 정의된 img_blob 사용)
     if (typeof img_blob !== 'undefined') {
         updateImgBlob(img_blob);
     }
@@ -134,7 +113,7 @@ window.removeFile = function(index) {
     event.stopPropagation();
 }
 
-// Web Worker 코드 (바이너리 보정 로직)
+// [개선됨] Web Worker용 코드 (바이너리 처리 로직)
 const workerCode = `
 self.onmessage = function(e) {
     const { zipData, imgData } = e.data;
@@ -142,7 +121,8 @@ self.onmessage = function(e) {
     const zipview = new DataView(zipData);
     const len = zipview.byteLength;
 
-    // EOCD 탐색
+    // [개선 2] EOCD 탐색 개선 (뒤에서부터 시그니처 검색)
+    // EOCD Signature: 0x06054b50
     let eocd = -1;
     for (let i = len - 22; i >= 0; i--) {
         if (zipview.getUint32(i, true) === 0x06054b50) {
@@ -156,20 +136,24 @@ self.onmessage = function(e) {
         return;
     }
 
+    // Central Directory 시작 위치 보정
     let cdr = zipview.getUint32(eocd + 16, true);
     zipview.setUint32(eocd + 16, cdr + img_len, true);
 
+    // Central Directory 레코드 순회 및 오프셋 보정
     while (cdr < eocd) {
-        let n = zipview.getUint16(cdr + 28, true);
-        let m = zipview.getUint16(cdr + 30, true);
-        let k = zipview.getUint16(cdr + 32, true);
+        // [개선 1] 주석 길이(k) 포함하여 오프셋 계산 오류 수정
+        let n = zipview.getUint16(cdr + 28, true); // 파일명 길이
+        let m = zipview.getUint16(cdr + 30, true); // 확장 필드 길이
+        let k = zipview.getUint16(cdr + 32, true); // 파일 주석 길이 (추가됨)
 
         let old_offset = zipview.getUint32(cdr + 42, true);
         zipview.setUint32(cdr + 42, old_offset + img_len, true);
 
-        cdr += 46 + n + m + k;
+        cdr += 46 + n + m + k; // k 추가
     }
 
+    // 결과 Blob 생성 (이미지 + 수정된 ZIP)
     const resultBlob = new Blob([imgData, zipData], {type: "image/png"});
     self.postMessage({ success: true, blob: resultBlob });
 };
@@ -182,53 +166,44 @@ function runCompression(compressionMode) {
     }
 
     log.clear();
-    
-    // [수정 4] 단일 ZIP 파일 최적화: 압축 해제 없이 바로 이미지화
-    let isSingleZip = fileQueue.length === 1 && fileQueue[0].name.toLowerCase().endsWith('.zip');
-    let dataPromise;
+    let zip = new JSZip();
+    log.log("압축 준비 중...");
 
-    if (isSingleZip) {
-        log.log("단일 ZIP 파일 감지. 재압축 없이 병합합니다...");
-        // 파일을 바로 ArrayBuffer로 읽음 (JSZip 사용 안 함)
-        dataPromise = fileQueue[0].arrayBuffer();
-    } else {
-        log.log("압축 준비 중...");
-        let zip = new JSZip();
-        fileQueue.forEach(file => {
-            let path = file.fullPath ? file.fullPath : file.name;
-            zip.file(path, file);
-        });
+    fileQueue.forEach(file => {
+        let path = file.fullPath ? file.fullPath : file.name;
+        zip.file(path, file);
+    });
 
-        log.log("압축하는 중...");
-        let options = {
-            type: "blob",
-            compression: compressionMode,
-            compressionOptions: { level: compressionMode === "STORE" ? 1 : 6 }
-        };
-        // JSZip으로 압축 후 ArrayBuffer 변환
-        dataPromise = zip.generateAsync(options).then(blob => blob.arrayBuffer());
-    }
+    log.log("압축하는 중...");
 
     let progressInterval = setInterval(() => {
         log.progress();
     }, 100);
 
-    dataPromise.then((zipArrayBuffer) => {
-        log.log("이미지와 결합 중...");
+    let options = {
+        type: "blob",
+        compression: compressionMode,
+        compressionOptions: { level: compressionMode === "STORE" ? 1 : 6 }
+    };
 
+    zip.generateAsync(options).then((zipBlob) => {
+        log.log("이미지와 결합 중..."); // [추가됨] 상태 메시지
+
+        // [개선 3] Web Worker 생성 및 실행
         const blobURL = URL.createObjectURL(new Blob([workerCode], { type: 'application/javascript' }));
         const worker = new Worker(blobURL);
 
-        Promise.all([Promise.resolve(zipArrayBuffer), img_blob.arrayBuffer()]).then(([zipData, imgData]) => {
-            worker.postMessage({ zipData, imgData }, [zipData, imgData]);
+        // 이미지와 ZIP 데이터를 ArrayBuffer로 읽어서 워커에 전달
+        Promise.all([zipBlob.arrayBuffer(), img_blob.arrayBuffer()]).then(([zipData, imgData]) => {
+            worker.postMessage({ zipData, imgData }, [zipData, imgData]); // Transferable objects 사용으로 성능 최적화
         });
 
         worker.onmessage = function(e) {
-            clearInterval(progressInterval);
+            clearInterval(progressInterval); // 작업 완료 시 멈춤
             
             if (e.data.error) {
                 alert(e.data.error);
-                log.log("오류 발생: " + e.data.error);
+                log.log("오류 발생!");
             } else if (e.data.success) {
                 let filenameInput = document.getElementById("filename").value.trim();
                 if (!filenameInput) filenameInput = "Result";
@@ -237,8 +212,8 @@ function runCompression(compressionMode) {
                 log.log("완료!");
             }
             
-            worker.terminate();
-            URL.revokeObjectURL(blobURL);
+            worker.terminate(); // 워커 종료
+            URL.revokeObjectURL(blobURL); // 메모리 해제
         };
 
         worker.onerror = function(e) {
@@ -250,7 +225,7 @@ function runCompression(compressionMode) {
 
     }, (err) => {
         clearInterval(progressInterval);
-        alert("처리 중 오류: " + err);
+        alert("압축 중 오류: " + err);
     });
 }
 
@@ -263,9 +238,8 @@ window.addEventListener("drop", function(e) {
     e.stopPropagation();
 
     let items = e.dataTransfer.items;
-    
-    // [수정 2] 폴더 이름 자동 입력 기능 삭제 (Result 유지)
-    // 기존의 isSingleFolder, folderName 로직 제거
+    let isSingleFolder = false;
+    let folderName = "";
 
     if (items) {
         let entries = [];
@@ -275,9 +249,18 @@ window.addEventListener("drop", function(e) {
             }
         }
 
+        if (entries.length === 1 && entries[0].isDirectory) {
+            isSingleFolder = true;
+            folderName = entries[0].name;
+        }
+
         scanFiles(entries).then(files => {
             files.forEach(f => fileQueue.push(f));
-            // 파일명 변경 로직 제거됨
+
+            if (isSingleFolder && folderName) {
+                document.getElementById("filename").value = folderName;
+            }
+
             renderFileList();
         });
     } else {
@@ -304,6 +287,7 @@ function scanFiles(entries) {
                 let dirReader = entry.createReader();
                 let allEntries = [];
                 
+                // [수정됨] 디렉토리 엔트리를 모두 읽을 때까지 반복 (브라우저 제한 대응)
                 const readDir = () => {
                     dirReader.readEntries(subEntries => {
                         if (subEntries.length > 0) {
