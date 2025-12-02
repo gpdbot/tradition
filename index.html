@@ -1,10 +1,25 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport"
+	      content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<link rel="stylesheet" type="text/css" href="res/tradition.css">
+	<link rel="shortcut icon" href="favicon.ico">
+	<script src="res/jquery-3.4.1.min.js"></script>
+	<script src="res/jszip.min.js"></script>
+	<script src="res/FileSaver.min.js"></script>
+	<script src="res/cover.js"></script>
+	<script src="res/tradition.js"></script>
+	<title>전통을 중시하라</title>
+</head>
+
 <body>
 	<div id="dropzone">
 		<div class="text">
 			<div class="bigLetter"></div>
-            <div style="margin-top: 10px; color: #666; font-size: 14px;">
-                (여기를 클릭하여 파일 선택 / <span id="btn-folder-upload" style="text-decoration: underline; cursor: pointer; color: cornflowerblue;">폴더 선택은 여기</span>)
-            </div>
 			<div class="warning">파일을 드래그하거나 클릭하여 추가하세요.</div>
 			
 			<div id="file-list-container" style="display:none;">
@@ -16,11 +31,9 @@
 					<input type="text" id="filename" value="Result" onfocus="this.select()">
 					<span>.png</span>
 				</div>
-                <div class="button-group" style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                    <label style="cursor: pointer; font-size: 14px;">
-                        <input type="checkbox" id="chk-compress"> 고압축 모드 (느림)
-                    </label>
-					<button id="btn-save">저장 (속도 우선)</button>
+				<div class="button-group">
+					<button id="btn-speed">속도 우선 (저장)</button>
+					<button id="btn-size">압축률 우선</button>
 				</div>
 			</div>
 
@@ -35,7 +48,6 @@
 
 	<input type="file" id="coverform" accept="image/*">
 	<input type="file" id="fileform" multiple>
-    <input type="file" id="folderform" webkitdirectory directory multiple>
 </body>
 
 </html>
